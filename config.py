@@ -8,7 +8,7 @@ API_HASH = "b18441a1ff607e10a989891a5462e627"
 SESSION_NAME = "tg_user_session"
 
 # Telegram Bot (для публикации)
-BOT_TOKEN = "8818750275:AAF0ykp0DyOtHfhNkC47opQTkhNgcB0F384"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = -1003968014145  # ID супергруппы
 
 # Привязка топиков (thread_id)
