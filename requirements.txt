@@ -1,0 +1,6 @@
+aiogram
+telethon
+aiosqlite
+ollama
+pydantic
+python-dotenv
