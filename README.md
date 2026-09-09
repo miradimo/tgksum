@@ -36,7 +36,6 @@ ollama pull qwen2.5:14b
 ```bash
 pip install -r requirements.txt
 ```
-*(Примечание: создайте файл requirements.txt, если его еще нет, включив туда aiogram, telethon, aiosqlite, ollama)*
 
 ### 3. Настройка конфигурации
 Отредактируйте файл `config.py`, указав свои данные:
@@ -67,6 +66,8 @@ python bot_controller.py
 - `dynamic_topics.py` — Обработка новостей, не попавших в основные категории.
 - `database.py` — Работа с базой данных SQLite.
 - `run_pipeline.py` — Скрипт для запуска полного цикла обработки в консоли.
+- `requirements.txt` — Список зависимостей.
+- `README.md` — Описание проекта и инструкция по запуску.
 
 ## 🤖 Использование
 

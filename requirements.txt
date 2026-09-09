@@ -4,3 +4,5 @@ aiosqlite
 ollama
 pydantic
 python-dotenv
+beautifulsoup4
+httpx
