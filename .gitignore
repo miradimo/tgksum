@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Database
+*.db
+
+# Media & Sessions
+downloads/
+*.session
+*.session-journal
+
+# Project specific
+result.json
+.aider*

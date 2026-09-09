@@ -32,6 +32,21 @@ ollama pull qwen2.5:7b
 ollama pull qwen2.5:14b
 ```
 
+### 2. Инициализация репозитория
+Если вы еще не инициализировали репозиторий Git, выполните следующие команды:
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+```
+
+### 3. Подключение к удаленному репозиторию на GitHub
+Добавьте удаленный репозиторий и сделайте первый пуш:
+```bash
+git remote add origin https://github.com/yourusername/your-repo.git
+git push -u origin master
+```
+
 ### 2. Установка зависимостей
 ```bash
 pip install -r requirements.txt
