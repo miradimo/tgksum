@@ -6,3 +6,6 @@ pydantic
 python-dotenv
 beautifulsoup4
 httpx
+sentence-transformers
+scikit-learn
+numpy

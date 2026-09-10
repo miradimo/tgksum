@@ -47,6 +47,11 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_proc ON messages(is_processed, is_summarized)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_topic ON messages(topic)")
         await db.commit()
+        try:
+            await db.execute("ALTER TABLE messages ADD COLUMN cluster_id TEXT")
+            await db.commit()
+        except Exception:
+            pass  # Колонка уже создана
     print(" База данных проверена и готова к работе.")
 
 async def get_channels_list():
@@ -76,3 +81,24 @@ async def get_db_stats():
             "unprocessed": unprocessed,
             "active_channels": active_channels
         }
+
+async def set_message_cluster(message_id: int, cluster_id: str):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            "UPDATE messages SET cluster_id = ? WHERE id = ?",
+            (cluster_id, message_id)
+        )
+        await db.commit()
+
+
+async def mark_cluster_summarized(post_ids: list[int], cluster_id: str):
+    """Помечает все посты инфоповода как суммаризированные и проставляет cluster_id."""
+    if not post_ids:
+        return
+    placeholders = ",".join("?" for _ in post_ids)
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            f"UPDATE messages SET is_summarized = 1, cluster_id = ? WHERE id IN ({placeholders})",
+            [cluster_id, *post_ids]
+        )
+        await db.commit()
