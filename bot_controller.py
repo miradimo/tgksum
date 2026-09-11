@@ -17,7 +17,9 @@ from classifier import classify_unprocessed
 from summarizer import generate_all_cards
 from dynamic_topics import process_other_news
 from publisher import publish_cards_to_topic, publish_dynamic_digest
+from rag_assistant import RAGAssistant
 
+rag_assistant = RAGAssistant()
 pipeline_lock = asyncio.Lock()
 
 bot = Bot(token=BOT_TOKEN)
@@ -191,6 +193,32 @@ async def run_full_pipeline_cmd(message: types.Message):
 
         except Exception as e:
             await status_msg.edit_text(f"❌ Ошибка во время выполнения пайплайна:\n`{e}`", parse_mode="Markdown")
+
+@dp.message(Command("ask"))
+async def cmd_ask(message: types.Message):
+    # Извлекаем текст вопроса после команды /ask
+    query = message.text.replace("/ask", "", 1).strip()
+
+    if not query:
+        await message.answer(
+            "Пожалуйста, укажите вопрос после команды.\n\n"
+            "Пример:\n`/ask Что писали за последние 3 дня про санкции на экспорт чипов?`",
+            parse_mode="Markdown",
+        )
+        return
+
+    status_msg = await message.answer("🔍 *Ищу в архиве и анализирую...*", parse_mode="Markdown")
+
+    try:
+        response = await rag_assistant.answer_question(query)
+        # Отправляем ответ без генерации предпросмотра ссылок, чтобы не засорять чат
+        await status_msg.edit_text(
+            response,
+            parse_mode="Markdown",
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        await status_msg.edit_text(f"Произошла ошибка при обработке запроса: {e}")
 
 
 async def main():
