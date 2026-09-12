@@ -1,5 +1,8 @@
 import asyncio
+from datetime import datetime
 import os
+import re
+from typing import Optional
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
@@ -11,6 +14,7 @@ from aiogram.types import (
 from telethon import TelegramClient
 
 from config import BOT_TOKEN, ADMIN_ID, CHAT_ID, TOPIC_THREADS, API_ID, API_HASH, SESSION_NAME
+import config
 from database import init_db, get_channels_list, toggle_channel_status, get_db_stats
 from telethon_collector import collect_posts_from_channels, sync_user_channels
 from classifier import classify_unprocessed
@@ -18,9 +22,20 @@ from summarizer import generate_all_cards
 from dynamic_topics import process_other_news
 from publisher import publish_cards_to_topic, publish_dynamic_digest
 from rag_assistant import RAGAssistant
+from database import (
+    get_messages_for_digest, 
+    init_settings_db, 
+    get_user_settings, 
+    update_user_setting
+)
+from dynamic_summarizer import DynamicSummarizer
+from telegraph_publisher import TelegraphPublisher
 
 rag_assistant = RAGAssistant()
 pipeline_lock = asyncio.Lock()
+
+summarizer = DynamicSummarizer()
+publisher = TelegraphPublisher(author_name="TGKSum Personal Feed")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -35,24 +50,172 @@ main_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+def get_main_reply_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📰 Сформировать дайджест")],
+            [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="🔍 Задать вопрос (RAG)")]
+        ],
+        resize_keyboard=True
+    )
+
+def render_settings_keyboard(s: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Формирует текст и клавиатуру меню настроек с актуальными тумблерами."""
+    # Обозначение текущей глубины
+    if s["depth_type"] == "hours":
+        depth_label = f"🕒 {s['depth_val']} ч."
+    else:
+        depth_label = f"🔢 {s['depth_val']} постов"
+
+    major_label = "🔥 Только главное (2+ источника)" if s["only_major"] else "🌐 Все новости"
+    quotes_label = "✅ Вкл" if s["show_quotes"] else "❌ Выкл"
+    code_label = "✅ Вкл" if s["show_code"] else "❌ Выкл"
+
+    text = (
+        "⚙️ *Панель настроек вашего дайджеста*\n\n"
+        f"• *Глубина сбора:* `{depth_label}`\n"
+        f"• *Фильтр сюжетов:* `{major_label}`\n"
+        f"• *Цитаты в статьях:* `{quotes_label}`\n"
+        f"• *Код и вставки:* `{code_label}`\n\n"
+        "_Нажимайте на кнопки ниже, чтобы изменить параметры:_"
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"⏱ Глубина: {depth_label}", callback_data="set_cycle_depth")],
+            [InlineKeyboardButton(text=f"Фильтр: {major_label}", callback_data="set_toggle_major")],
+            [
+                InlineKeyboardButton(text=f"Цитаты: {quotes_label}", callback_data="set_toggle_quotes"),
+                InlineKeyboardButton(text=f"Код: {code_label}", callback_data="set_toggle_code"),
+            ],
+            [InlineKeyboardButton(text="◀️ Закрыть меню", callback_data="set_close")]
+        ]
+    )
+    return text, kb
+
+# Хэндлер на команду /settings или нажатие кнопки "⚙️ Настройки"
+@dp.message(F.text == "⚙️ Настройки")
+@dp.message(Command("settings"))
+async def cmd_settings(message: types.Message):
+    await init_settings_db(config.DB_NAME)
+    s = await get_user_settings(config.DB_NAME, message.from_user.id)
+    text, kb = render_settings_keyboard(s)
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+
+# Обработка нажатий на тумблеры в настройках
+@dp.callback_query(F.data.startswith("set_"))
+async def cb_settings(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    action = call.data
+    s = await get_user_settings(config.DB_NAME, user_id)
+
+    if action == "set_close":
+        await call.message.delete()
+        return
+
+    # Циклическое переключение глубины: 12ч -> 24ч -> 72ч -> 30 постов -> 70 постов -> 12ч
+    if action == "set_cycle_depth":
+        cycle = [
+            ("hours", 12),
+            ("hours", 24),
+            ("hours", 72),
+            ("count", 30),
+            ("count", 70),
+        ]
+        curr = (s["depth_type"], s["depth_val"])
+        idx = cycle.index(curr) if curr in cycle else 1
+        next_type, next_val = cycle[(idx + 1) % len(cycle)]
+        await update_user_setting(config.DB_NAME, user_id, "depth_type", next_type)
+        await update_user_setting(config.DB_NAME, user_id, "depth_val", next_val)
+
+    elif action == "set_toggle_major":
+        await update_user_setting(config.DB_NAME, user_id, "only_major", 0 if s["only_major"] else 1)
+
+    elif action == "set_toggle_quotes":
+        await update_user_setting(config.DB_NAME, user_id, "show_quotes", 0 if s["show_quotes"] else 1)
+
+    elif action == "set_toggle_code":
+        await update_user_setting(config.DB_NAME, user_id, "show_code", 0 if s["show_code"] else 1)
+
+    # Обновляем клавиатуру и текст на лету
+    updated_s = await get_user_settings(config.DB_NAME, user_id)
+    new_text, new_kb = render_settings_keyboard(updated_s)
+    await call.message.edit_text(new_text, reply_markup=new_kb, parse_mode="Markdown")
+    await call.answer()
+
+def build_message_link(channel_username: str, channel_id: int, message_id: int) -> str:
+    if channel_username:
+        clean_user = channel_username.lstrip("@")
+        return f"https://t.me/{clean_user}/{message_id}"
+    if channel_id:
+        clean_id = str(channel_id).replace("-100", "").lstrip("-")
+        return f"https://t.me/c/{clean_id}/{message_id}"
+    return ""
+
+async def run_digest_pipeline(message: types.Message, limit: Optional[int] = None, hours: Optional[int] = None):
+    status_msg = await message.answer("⏳ *Собираю посты и формирую кластеры событий...*", parse_mode="Markdown")
+
+    try:
+        raw_posts = await get_messages_for_digest(config.DB_NAME, limit=limit, hours=hours)
+        if not raw_posts:
+            await status_msg.edit_text("За выбранный период не найдено подходящих постов.")
+            return
+
+        # Формируем ссылки на сообщения
+        for p in raw_posts:
+            p["message_link"] = build_message_link(p.get("channel_username"), p.get("channel_id"), p.get("message_id"))
+
+        await status_msg.edit_text(f"🧠 *Кластеризую {len(raw_posts)} постов и генерирую саммари через LLM...*", parse_mode="Markdown")
+        stories = await summarizer.process_feed(raw_posts)
+
+        await status_msg.edit_text("🎨 *Верстаю статью в Telegraph...*", parse_mode="Markdown")
+        today_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+        telegraph_url = await publisher.publish_digest(f"Дайджест — {today_str}", stories)
+
+        # Клавиатура с кнопкой Instant View
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📖 Читать полный дайджест", url=telegraph_url)]
+            ]
+        )
+
+        preview_text = (
+            f"📰 *Ваш персональный дайджест готов!*\n\n"
+            f"• Проанализировано постов: *{len(raw_posts)}*\n"
+            f"• Выделено ключевых сюжетов: *{len(stories)}*\n\n"
+            f"_Нажмите кнопку ниже для открытия в режиме Instant View:_"
+        )
+
+        await status_msg.delete()
+        await message.answer(preview_text, reply_markup=kb, parse_mode="Markdown")
+
+    except Exception as e:
+        await status_msg.edit_text(f"Произошла ошибка при генерации дайджеста: {e}")
+
 def check_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
 
+@dp.message(F.text == "📰 Сформировать дайджест")
+async def cmd_quick_digest(message: types.Message):
+    s = await get_user_settings(config.DB_NAME, message.from_user.id)
+    
+    hours = s["depth_val"] if s["depth_type"] == "hours" else None
+    limit = s["depth_val"] if s["depth_type"] == "count" else None
+    
+    # Запускаем генерацию с индивидуальными настройками пользователя
+    await run_digest_pipeline(message, limit=limit, hours=hours)
 
-@dp.message(CommandStart())
+
+@dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    if not check_admin(message.from_user.id):
-        await message.answer(" Доступ запрещен.")
-        return
-
+    await init_settings_db(config.DB_NAME)
     await message.answer(
-        "👋 **Панель управления AI-Дайджестом**\n\n"
-        "Нажмите кнопку внизу или используйте команды:\n"
-        "• `/run` — запустить сбор и публикацию\n"
-        "• `/sync` — найти новые каналы в аккаунте\n"
-        "• `/channels` — настроить каналы для сбора\n"
-        "• `/stats` — статус базы данных",
-        reply_markup=main_keyboard,
+        "👋 *Привет! Я ваш персональный AI-ассистент по Telegram-каналам.*\n\n"
+        "• Нажмите *«📰 Сформировать дайджест»*, чтобы получить сводку.\n"
+        "• В разделе *«⚙️ Настройки»* можно выбрать глубину сбора и фильтры.\n"
+        "• Задавайте любые вопросы по архиву постов через команду `/ask` или кнопку поиска.",
+        reply_markup=get_main_reply_kb(),
         parse_mode="Markdown"
     )
 
@@ -194,6 +357,43 @@ async def run_full_pipeline_cmd(message: types.Message):
         except Exception as e:
             await status_msg.edit_text(f"❌ Ошибка во время выполнения пайплайна:\n`{e}`", parse_mode="Markdown")
 
+
+@dp.message(Command("digest"))
+async def cmd_digest(message: types.Message):
+    args = message.text.replace("/digest", "").strip().lower()
+
+    # Если передан аргумент в чате
+    if args:
+        # Вариант по часам: 12h, 24h
+        match_h = re.match(r"^(\d+)\s*h$", args)
+        if match_h:
+            return await run_digest_pipeline(message, hours=int(match_h.group(1)))
+
+        # Вариант по дням: 2d, 3d
+        match_d = re.match(r"^(\d+)\s*d$", args)
+        if match_d:
+            return await run_digest_pipeline(message, hours=int(match_d.group(1)) * 24)
+
+        # Вариант по количеству: 30, 50, 100
+        if args.isdigit():
+            return await run_digest_pipeline(message, limit=int(args))
+
+    # Если аргументов нет — предлагаем удобные кнопки
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🕒 12 часов", callback_data="dig_h_12"),
+                InlineKeyboardButton(text="📅 24 часа", callback_data="dig_h_24"),
+                InlineKeyboardButton(text="📆 3 дня", callback_data="dig_h_72"),
+            ],
+            [
+                InlineKeyboardButton(text="🔢 30 постов", callback_data="dig_cnt_30"),
+                InlineKeyboardButton(text="🔢 70 постов", callback_data="dig_cnt_70"),
+            ]
+        ]
+    )
+    await message.answer("Выберите глубину для формирования дайджеста:", reply_markup=kb)
+
 @dp.message(Command("ask"))
 async def cmd_ask(message: types.Message):
     # Извлекаем текст вопроса после команды /ask
@@ -220,6 +420,21 @@ async def cmd_ask(message: types.Message):
     except Exception as e:
         await status_msg.edit_text(f"Произошла ошибка при обработке запроса: {e}")
 
+@dp.callback_query(F.data.startswith("dig_"))
+async def cb_digest(call: types.CallbackQuery):
+    await call.message.delete()
+    code = call.data
+
+    if code == "dig_h_12":
+        await run_digest_pipeline(call.message, hours=12)
+    elif code == "dig_h_24":
+        await run_digest_pipeline(call.message, hours=24)
+    elif code == "dig_h_72":
+        await run_digest_pipeline(call.message, hours=72)
+    elif code == "dig_cnt_30":
+        await run_digest_pipeline(call.message, limit=30)
+    elif code == "dig_cnt_70":
+        await run_digest_pipeline(call.message, limit=70)
 
 async def main():
     await init_db()
