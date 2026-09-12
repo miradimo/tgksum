@@ -91,7 +91,7 @@ git clone https://github.com/miradimo/tgksum.git
 
 cd tgksum
 
-python \-m venv .venv
+python -m venv .venv
 ```
 \# Активация окружения (Windows PowerShell):
 ```bash
@@ -103,7 +103,7 @@ source .venv/bin/activate
 ```
 &nbsp;
 ```bash
-pip install \-r requirements.txt
+pip install -r requirements.txt
 ```
 ### 2\. Подготовка моделей в Ollama
 
@@ -115,13 +115,13 @@ ollama pull qwen2.5:14b
 
 Создайте файл `.env` в корне проекта со следующими параметрами:
 ```
-BOT_TOKEN=your\_telegram\_bot\_token
+BOT_TOKEN=your_telegram_bot_token
 
-API_ID=your\_telethon\_api\_id
+API_ID=your_telethon_api_id
 
-API_HASH=your\_telethon\_api\_hash
+API_HASH=your_telethon_api_hash
 
-ADMIN_ID=your\_telegram\_user\_id
+ADMIN_ID=your_telegram_user_id
 ```
 
 ### 4\. Авторизация и сбор каналов
