@@ -18,7 +18,11 @@
 - **Отказ от жестких категорий**: Тематика новости формируется LLM «на лету» в виде динамических тегов (`#ИИ`, `#Макроэкономика`, `#Геймдев` и др.).  
 - **Журнальная верстка**: Публикация лонгрида через Telegraph API с мгновенным открытием внутри Telegram через **Instant View**.  
 - **Богатый контент**: Автоматическое выделение цитат спикеров (`<blockquote>`), блоков программного кода (`<pre><code>`) и дедуплицированных ссылок на каналы.
-
+<p align="center">
+  <img src="assets/bot_settings.jpg" width="31%" alt="Панель настроек бота" />
+  <img src="assets/digest_ready.jpg" width="35%" alt="Уведомление о дайджесте" />
+  <img src="assets/telegraph_view.jpg" width="31%" alt="Верстка статьи в Telegraph" />
+</p>
 ### 3\. Интерактивный RAG-архив («Поговори с лентой»)
 
 - **Локальная векторная база Qdrant**: Индексация всех входящих постов (текст, канал, ссылка, дата, топик).  
@@ -82,7 +86,7 @@ tgksum/
 ## 🚀 Быстрый старт
 
 ### 1\. Клонирование репозитория и окружение
-
+```bash
 git clone https://github.com/miradimo/tgksum.git
 
 cd tgksum
@@ -96,21 +100,21 @@ python \-m venv .venv
 \# Активация окружения (Linux/macOS):
 
 source .venv/bin/activate
-
+```
 &nbsp;
-
+```bash
 pip install \-r requirements.txt
-
+```
 ### 2\. Подготовка моделей в Ollama
 
 Убедитесь, что [Ollama](https://ollama.com/) запущена:
-
+```bash
 ollama pull qwen2.5:14b
-
+```
 ### 3\. Настройка конфигурации
 
 Создайте файл `.env` в корне проекта со следующими параметрами:
-
+```
 BOT\_TOKEN=your\_telegram\_bot\_token
 
 API\_ID=your\_telethon\_api\_id
@@ -118,23 +122,25 @@ API\_ID=your\_telethon\_api\_id
 API\_HASH=your\_telethon\_api\_hash
 
 ADMIN\_ID=your\_telegram\_user\_id
+```
 
 ### 4\. Авторизация и сбор каналов
 
 Для первого запуска и создания пользовательской сессии Telethon:
-
+```bash
 python run\_pipeline.py \--sync
+```
 
 ### 5\. Индексация базы в Qdrant (опционально)
 
 Если в вашей базе SQLite уже есть накопленные посты, проиндексируйте их для работы RAG-поиска:
-
+```bash
 python index\_store.py
-
+```
 ### 6\. Запуск бота
-
+```bash
 python bot\_controller.py
-
+```
 ---
 
 ## 🤖 Команды и взаимодействие с ботом
