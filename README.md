@@ -92,13 +92,13 @@ git clone https://github.com/miradimo/tgksum.git
 cd tgksum
 
 python \-m venv .venv
-
+```
 \# Активация окружения (Windows PowerShell):
-
+```bash
 .venv\\Scripts\\Activate.ps1
-
+```
 \# Активация окружения (Linux/macOS):
-
+```bash
 source .venv/bin/activate
 ```
 &nbsp;
@@ -115,31 +115,31 @@ ollama pull qwen2.5:14b
 
 Создайте файл `.env` в корне проекта со следующими параметрами:
 ```
-BOT\_TOKEN=your\_telegram\_bot\_token
+BOT_TOKEN=your\_telegram\_bot\_token
 
-API\_ID=your\_telethon\_api\_id
+API_ID=your\_telethon\_api\_id
 
-API\_HASH=your\_telethon\_api\_hash
+API_HASH=your\_telethon\_api\_hash
 
-ADMIN\_ID=your\_telegram\_user\_id
+ADMIN_ID=your\_telegram\_user\_id
 ```
 
 ### 4\. Авторизация и сбор каналов
 
 Для первого запуска и создания пользовательской сессии Telethon:
 ```bash
-python run\_pipeline.py \--sync
+python run_pipeline.py --sync
 ```
 
 ### 5\. Индексация базы в Qdrant (опционально)
 
 Если в вашей базе SQLite уже есть накопленные посты, проиндексируйте их для работы RAG-поиска:
 ```bash
-python index\_store.py
+python index_store.py
 ```
 ### 6\. Запуск бота
 ```bash
-python bot\_controller.py
+python bot_controller.py
 ```
 ---
 
